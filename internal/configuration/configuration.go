@@ -1,4 +1,4 @@
-// Copyright 2019 Aporeto Inc.
+// Copyright 2024 Ajabep
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,7 +16,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"go.aporeto.io/addedeffect/lombric"
 	"go.aporeto.io/tg/tglib"
@@ -24,26 +24,28 @@ import (
 
 // Configuration hold the service configuration.
 type Configuration struct {
-	Backend                  string `mapstructure:"backend"         desc:"destination host"                                     default:"http://127.0.0.1"`
-	ClientCAPoolPath         string `mapstructure:"clients-ca"      desc:"Path the CAs used to verify client certificates"      required:"true"`
-	ListenAddress            string `mapstructure:"listen"          desc:"Listening address"                                    default:":443"`
-	ServerCertificateKeyPass string `mapstructure:"cert-key-pass"   desc:"Password for the server certificate key"              `
-	ServerCertificateKeyPath string `mapstructure:"cert-key"        desc:"Path to the server certificate key"                   required:"true"`
-	ServerCertificatePath    string `mapstructure:"cert"            desc:"Path to the server certificate"                       required:"true"`
-	Mode                     string `mapstructure:"mode"            desc:"Proxy mode"                                           default:"http" allowed:"tcp,http"`
-	LogFormat                string `mapstructure:"log-format"      desc:"Log format"                                           default:"console"`
-	LogLevel                 string `mapstructure:"log-level"       desc:"Log level"                                            default:"info"`
+	Backend                  string `mapstructure:"backend"                  desc:"destination host"                                                                                       required:"true"`
+	ServerCAPoolPath         string `mapstructure:"server-ca"                desc:"Path the CAs used to verify server certificate. If not set, does not verify the server certificate."    default:""`
+	ListenAddress            string `mapstructure:"listen"                   desc:"Listening address"                                                                                      default:":443"`
+	ClientCertificateKeyPass string `mapstructure:"cert-key-pass"            desc:"Password for the client certificate key"                                                                `
+	ClientCertificateKeyPath string `mapstructure:"cert-key"                 desc:"Path to the client certificate key"                                                                     required:"true"`
+	ClientCertificatePath    string `mapstructure:"cert"                     desc:"Path to the client certificate"                                                                         required:"true"`
+	Mode                     string `mapstructure:"mode"                     desc:"Proxy mode"                                                                                             default:"tcp" allowed:"tcp,http"`
+	LogFormat                string `mapstructure:"log-format"               desc:"Log format"                                                                                             default:"console"`
+	LogLevel                 string `mapstructure:"log-level"                desc:"Log level"                                                                                              default:"info"`
+	UnsecureKeyLogPath       string `mapstructure:"unsecure-key-log-path"    desc:"[UNSECURE] Path of the file where session keys are dumped. Useful for debugging"                        default:""`
 
-	ClientCAPool       *x509.CertPool
-	ServerCertificates []tls.Certificate
+	ServerCAPool       *x509.CertPool
+	ClientCertificates []tls.Certificate
+	ServerCAVerify     bool
 }
 
 // Prefix returns the configuration prefix.
-func (c *Configuration) Prefix() string { return "mtlsproxy" }
+func (c *Configuration) Prefix() string { return "unmtlsproxy" }
 
 // PrintVersion prints the current version.
 func (c *Configuration) PrintVersion() {
-	fmt.Printf("mtls - %s (%s)\n", "1.0", "")
+	fmt.Printf("unmtlsproxy - %s\n", "1.0")
 }
 
 // NewConfiguration returns a new configuration.
@@ -52,14 +54,17 @@ func NewConfiguration() *Configuration {
 	c := &Configuration{}
 	lombric.Initialize(c)
 
-	data, err := ioutil.ReadFile(c.ClientCAPoolPath)
-	if err != nil {
-		panic(err)
+	c.ServerCAVerify = c.ServerCAPoolPath != ""
+	if c.ServerCAVerify {
+		data, err := os.ReadFile(c.ServerCAPoolPath)
+		if err != nil {
+			panic(err)
+		}
+		c.ServerCAPool = x509.NewCertPool()
+		c.ServerCAPool.AppendCertsFromPEM(data)
 	}
-	c.ClientCAPool = x509.NewCertPool()
-	c.ClientCAPool.AppendCertsFromPEM(data)
 
-	certs, key, err := tglib.ReadCertificatePEMs(c.ServerCertificatePath, c.ServerCertificateKeyPath, c.ServerCertificateKeyPass)
+	certs, key, err := tglib.ReadCertificatePEMs(c.ClientCertificatePath, c.ClientCertificateKeyPath, c.ClientCertificateKeyPass)
 	if err != nil {
 		panic(err)
 	}
@@ -68,7 +73,7 @@ func NewConfiguration() *Configuration {
 	if err != nil {
 		panic(err)
 	}
-	c.ServerCertificates = append(c.ServerCertificates, tc)
+	c.ClientCertificates = append(c.ClientCertificates, tc)
 
 	return c
 }

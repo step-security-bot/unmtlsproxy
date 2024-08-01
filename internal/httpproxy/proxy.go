@@ -1,4 +1,4 @@
-// Copyright 2019 Aporeto Inc.
+// Copyright 2024 Ajabep
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -15,30 +15,75 @@ import (
 	"crypto/tls"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
+	"time"
 
-	"github.com/aporeto-inc/mtlsproxy/internal/configuration"
+	"github.com/ajabep/unmtlsproxy/internal/configuration"
 )
 
-func makeHandleHTTP(dest string) func(w http.ResponseWriter, req *http.Request) {
+func makeHandleHTTP(dest string, tlsConfig *tls.Config) func(w http.ResponseWriter, req *http.Request) {
 
 	u, err := url.Parse(dest)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Cannot parse the backend URI: %s", err)
+	}
+
+	switch u.Port() {
+	default:
+		log.Fatalf("Cannot guess the Scheme for port %s", u.Port())
+	case "80":
+		u.Scheme = "http"
+	case "443":
+		u.Scheme = "http"
+	case "":
+		switch u.Scheme {
+		default:
+			log.Fatalf("Cannot guess the default port for scheme %s", u.Scheme)
+		case "http":
+			u.Host += ":80"
+		case "https":
+			u.Host += ":443"
+		case "":
+			log.Fatal("Cannot guess the Scheme when no port is given")
+		}
 	}
 
 	rewriteHost := u.Host
 	rewriteSchema := u.Scheme
+
+	hostAttr := u.Hostname() + ":" + u.Port()
+
+	// It establishes network connections as needed
+	// and caches them for reuse by subsequent calls. It uses HTTP proxies
+	// as directed by the environment variables HTTP_PROXY, HTTPS_PROXY
+	// and NO_PROXY (or the lowercase versions thereof).
+	var transport http.RoundTripper = &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		TLSClientConfig:       tlsConfig,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
 
 	return func(w http.ResponseWriter, req *http.Request) {
 
 		req.URL.Host = rewriteHost
 		req.URL.Scheme = rewriteSchema
 
-		resp, err := http.DefaultTransport.RoundTrip(req)
+		// Update Host header
+		//req.Header.Set("Host", hostHeader)
+		req.Host = hostAttr
+
+		resp, err := transport.RoundTrip(req)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
@@ -64,13 +109,12 @@ func makeHandleHTTP(dest string) func(w http.ResponseWriter, req *http.Request) 
 func Start(cfg *configuration.Configuration, tlsConfig *tls.Config) {
 
 	server := &http.Server{
-		Addr:      cfg.ListenAddress,
-		TLSConfig: tlsConfig,
-		Handler:   http.HandlerFunc(makeHandleHTTP(cfg.Backend)),
+		Addr:    cfg.ListenAddress,
+		Handler: http.HandlerFunc(makeHandleHTTP(cfg.Backend, tlsConfig)),
 	}
 
 	go func() {
-		if err := server.ListenAndServeTLS("", ""); err != nil {
+		if err := server.ListenAndServe(); err != nil {
 			log.Fatalln("Unable to start proxy:", err)
 		}
 	}()

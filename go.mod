@@ -1,4 +1,4 @@
-module github.com/aporeto-inc/mtlsproxy
+module github.com/ajabep/unmtlsproxy
 
 go 1.22
 

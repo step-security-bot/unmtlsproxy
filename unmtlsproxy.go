@@ -1,4 +1,4 @@
-// Copyright 2019 Aporeto Inc.
+// Copyright 2024 Ajabep
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,11 +13,14 @@ package main
 
 import (
 	"crypto/tls"
+	"io"
+	"log"
+	"os"
 	"time"
 
-	"github.com/aporeto-inc/mtlsproxy/internal/configuration"
-	"github.com/aporeto-inc/mtlsproxy/internal/httpproxy"
-	"github.com/aporeto-inc/mtlsproxy/internal/tcpproxy"
+	"github.com/ajabep/unmtlsproxy/internal/configuration"
+	"github.com/ajabep/unmtlsproxy/internal/httpproxy"
+	"github.com/ajabep/unmtlsproxy/internal/tcpproxy"
 )
 
 func main() {
@@ -26,13 +29,33 @@ func main() {
 
 	time.Local = time.UTC
 
+	cliSessionCache := tls.NewLRUClientSessionCache(10)
+
+	var w io.Writer = nil
+
+	if cfg.UnsecureKeyLogPath != "" {
+		if w2, err := os.OpenFile(cfg.UnsecureKeyLogPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE|os.O_SYNC, os.ModePerm); err != nil {
+			log.Fatalln("Unable to open the key log path:", err)
+		} else {
+			w = w2 // If setting up w and err with a `:=`, it will create a temp var
+		}
+	}
+
 	tlsConfig := &tls.Config{
+		// Server
+		RootCAs:            cfg.ServerCAPool,
+		InsecureSkipVerify: !cfg.ServerCAVerify,
+		KeyLogWriter:       w,
+
+		// Client
+		Certificates:       cfg.ClientCertificates,
+		ClientSessionCache: cliSessionCache,
+
+		/// OLD
 		ClientAuth:               tls.RequireAndVerifyClientCert,
-		ClientCAs:                cfg.ClientCAPool,
 		MinVersion:               tls.VersionTLS12,
 		SessionTicketsDisabled:   true,
 		PreferServerCipherSuites: true,
-		Certificates:             cfg.ServerCertificates,
 
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,

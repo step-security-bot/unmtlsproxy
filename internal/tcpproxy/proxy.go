@@ -1,4 +1,4 @@
-// Copyright 2019 Aporeto Inc.
+// Copyright 2024 Ajabep
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -19,7 +19,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/aporeto-inc/mtlsproxy/internal/configuration"
+	"github.com/ajabep/unmtlsproxy/internal/configuration"
 )
 
 type proxy struct {
@@ -38,8 +38,9 @@ func newProxy(from, to string, tlsConfig *tls.Config) *proxy {
 }
 
 func (p *proxy) start(ctx context.Context) error {
+	/// Start the proxy. Is blocking!
 
-	listener, err := tls.Listen("tcp", p.from, p.tlsConfig)
+	listener, err := net.Listen("tcp", p.from)
 	if err != nil {
 		return err
 	}
@@ -62,7 +63,7 @@ func (p *proxy) start(ctx context.Context) error {
 func (p *proxy) handle(ctx context.Context, connection net.Conn) {
 
 	defer connection.Close() // nolint
-	remote, err := net.Dial("tcp", p.to)
+	remote, err := tls.Dial("tcp", p.to, p.tlsConfig)
 	if err != nil {
 		return
 	}
