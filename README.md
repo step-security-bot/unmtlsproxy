@@ -1,5 +1,9 @@
 # unmtlsproxy
 
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/ajabep/unmtlsproxy/badge)](https://securityscorecards.dev/viewer/?uri=github.com/ajabep/unmtlsproxy)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=ajabeporg_unmtlsproxy&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=ajabeporg_unmtlsproxy)
+
+
 un-MTLS proxy is a simple proxy service to remove the mutual TLS authentication to some services. This is useful when a tool is not supporting mTLS.
 
 > ⚠️ **DO NOT RUN IT IN PRODUCTION** ⚠️
